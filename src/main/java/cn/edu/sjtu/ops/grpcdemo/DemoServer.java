@@ -3,10 +3,14 @@ package cn.edu.sjtu.ops.grpcdemo;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
 import io.grpc.stub.StreamObserver;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.util.UUID;
 import java.util.logging.*;
+
+import org.apache.hadoop.fs.FSDataOutputStream;
 
 public class DemoServer {
 
@@ -17,15 +21,7 @@ public class DemoServer {
     private static final int CHUNKSIZE = 1;
 
     public DemoServer(int port) throws IOException {
-        logger = Logger.getLogger("logger.info");
-        logger.setLevel(Level.INFO);
-
-        File logFile = new File("src/main/log/server.log");
-        FileHandler fileHandler = new FileHandler(logFile.getAbsolutePath(), 10240, 1, true);
-        fileHandler.setLevel(Level.INFO);
-        fileHandler.setFormatter(new MyLogFormatter());
-        logger.addHandler(fileHandler);
-
+        logger = LoggerFactory.getLogger(DemoServer.class);
         this.port = port;
         ServerBuilder sb = ServerBuilder.forPort(port);
         this.server = sb.addService(new DemoService()).build();
@@ -38,7 +34,7 @@ public class DemoServer {
         logger.info("************ START *************");
 
         server.start();
-        System.out.println("Server started, listening on " + port);
+        logger.info("Server started, listening on " + port);
         Runtime.getRuntime().addShutdownHook(new Thread() {
             @Override
             public void run() {
@@ -88,85 +84,53 @@ public class DemoServer {
 //                ByteArrayOutputStream bos = new ByteArrayOutputStream(CHUNKSIZE);
                 String filename = UUID.randomUUID().toString();
                 int count = 0;
+                FSDataOutputStream output;
+                Hdfs hdfs = null;
+                boolean first = true;
                 public void onNext(Chunk chunk) {
+                    try {
+                        if (first == true) {
+                            first = false;
+                            hdfs = Hdfs.getInstance();
+                            hdfs.mkdir("/" + Thread.currentThread().getName());
+                            String path = "/" + Thread.currentThread().getName() + "/" + filename;
+                            output = hdfs.create(path, true);
+
+                        } else {
+                            output.write(chunk.getContent().toByteArray());
+                        }
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
                     count++;
                     logger.info("chunk-" + String.valueOf(count) + " start");
-//                    count += 1;
-//                    if (count % 1 == 0)
-//                        System.out.println(String.valueOf(count));
-//                    BufferedInputStream bis = new BufferedInputStream(chunk.getContent().newInput());
-//                    byte[] b = new byte[CHUNKSIZE];
-//                    int n;
-//                    try {
-//                        while ((n = bis.read(b, 0, CHUNKSIZE)) != -1) {
-//                            bos.write(b, 0, n);
-//                        }
-//                    } catch (IOException e) {
-//                        e.printStackTrace();
-//                    }
-
-                    BufferedOutputStream bos = null;
-                    FileOutputStream fos = null;
-                    File file = null;
-                    try {
-                        file = new File("src/main/resources/" + filename);
-                        fos = new FileOutputStream(file, true);
-                        bos = new BufferedOutputStream(fos);
-                        bos.write(chunk.getContent().toByteArray());
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    } finally {
-                        if (bos != null) {
-                            try {
-                                bos.close();
-                            } catch (IOException e1) {
-                                e1.printStackTrace();
-                            }
-                        }
-                        if (fos != null) {
-                            try {
-                                fos.close();
-                            } catch (IOException e1) {
-                                e1.printStackTrace();
-                            }
-                        }
-                    }
-                    logger.info("chunk-" + String.valueOf(count) + " finish");
                 }
 
 
                 public void onError(Throwable throwable) {
-                    System.out.println("error!!!!");
+                    logger.info("error!!!!");
                 }
 
                 public void onCompleted() {
-//                    FileOutputStream fos = null;
-//                    BufferedOutputStream fbos = null;
-//                    try {
-//                        fos = new FileOutputStream(new File("src/main/resources/received.txt"));
-//                        fbos = new BufferedOutputStream(fos);
-//                        fbos.write(bos.toByteArray());
-//                    } catch (FileNotFoundException e) {
-//                        e.printStackTrace();
-//                    } catch (IOException e) {
-//                        e.printStackTrace();
-//                    } finally {
-//                        if (fbos != null) {
-//                            try {
-//                                fbos.close();
-//                            } catch (IOException e1) {
-//                                e1.printStackTrace();
-//                            }
-//                        }
-//                        if (fos != null) {
-//                            try {
-//                                fos.close();
-//                            } catch (IOException e1) {
-//                                e1.printStackTrace();
-//                            }
-//                        }
-//                    }
-                    System.out.println("complete!!!!!");
+                    try {
+                        if (output != null) {
+                            try {
+                                output.close();
+                            } catch (Exception e) {
+                                logger.error(String.valueOf(e));
+                            }
+                        }
+                        if (hdfs != null) {
+                            try {
+                                hdfs.close();
+                            } catch (IOException e) {
+                                logger.error(String.valueOf(e));
+                            }
+                        }
+                    } catch (RuntimeException e) {
+                        throw new RuntimeException(e);
+                    }
+                    logger.info("complete!!!!!");
                     logger.info("File Transfer Completed\n");
                     responseObserver.onNext(UploadStatus.newBuilder().setCodeValue(1).build());
                     responseObserver.onCompleted();

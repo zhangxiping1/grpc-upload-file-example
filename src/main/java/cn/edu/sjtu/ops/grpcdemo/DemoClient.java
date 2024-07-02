@@ -5,14 +5,13 @@ import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import cn.edu.sjtu.ops.grpcdemo.DemoServiceGrpc.*;
 import io.grpc.stub.StreamObserver;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.util.Date;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.logging.FileHandler;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 import static cn.edu.sjtu.ops.grpcdemo.DemoServiceGrpc.newBlockingStub;
 import static cn.edu.sjtu.ops.grpcdemo.DemoServiceGrpc.newStub;
@@ -29,15 +28,7 @@ public class DemoClient {
     }
 
     public DemoClient(ManagedChannelBuilder<?> channelBuilder) throws IOException {
-        logger = Logger.getLogger("logger.info");
-        logger.setLevel(Level.INFO);
-
-        File logFile = new File("src/main/log/client.log");
-        FileHandler fileHandler = new FileHandler(logFile.getAbsolutePath(), 10240, 1, true);
-        fileHandler.setLevel(Level.INFO);
-        fileHandler.setFormatter(new DemoServer.MyLogFormatter());
-        logger.addHandler(fileHandler);
-
+        logger = LoggerFactory.getLogger(DemoClient.class);
         channel = channelBuilder.build();
         blockingStub = newBlockingStub(channel);
         asyncStub = newStub(channel);
@@ -51,16 +42,16 @@ public class DemoClient {
         final CountDownLatch finishLatch = new CountDownLatch(1);
         StreamObserver<UploadStatus> responseObserver = new StreamObserver<UploadStatus>() {
             public void onNext(UploadStatus uploadStatus) {
-                System.out.println("uploadFile: status: "+ String.valueOf(uploadStatus.getCode().getNumber()));
+                logger.info("uploadFile: status: "+ String.valueOf(uploadStatus.getCode().getNumber()));
             }
 
             public void onError(Throwable throwable) {
-                System.out.println("uploadFile Error!");
+                logger.info("uploadFile Error!");
             }
 
             public void onCompleted() {
                 logger.info("finish upload (chunk size: " + String.valueOf(chunkSize) + ")");
-                System.out.println("uploadFile Completed!");
+                logger.info("uploadFile Completed!");
                 finishLatch.countDown();
             }
         };
@@ -109,9 +100,20 @@ public class DemoClient {
         String hostname = "127.0.0.1";
         int chunkSize = Integer.parseInt("100");
         DemoClient client = new DemoClient(hostname, 8980);
-//        client.uploadFile("testfile.txt", 10);
         Date start = new Date();
-        client.uploadFile("testfile.mp4", chunkSize * 1024);
+        for (int i = 0; i < 200; i++){
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        (new DemoClient(hostname, 8980)).uploadFile("testfile.mp4", chunkSize * 1024);
+                    } catch (InterruptedException | IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }).start();
+            Thread.sleep(100);
+        }
         Date end = new Date();
         float diff = end.getTime() - start.getTime();
         System.out.println(String.valueOf(diff / 1000) + "s");

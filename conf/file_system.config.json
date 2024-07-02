@@ -1,0 +1,18 @@
+{
+    "file_system": {
+        "name": "HDFS",
+        "default_user": "suhtsc_pai",
+        "always_use_default_user": true,
+        "writable_paths": [
+            "/"
+        ],
+        "kerberos_enabled": true,
+        "kerberos_user": "suhtsc_pai"
+    },
+    "services": {
+        "file_system": {
+            "host": "localhost",
+            "port": "23013"
+        }
+    }
+}
